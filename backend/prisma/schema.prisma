@@ -1,0 +1,39 @@
+// backend/prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// 1. The User (Developers using the platform)
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  name      String?
+  createdAt DateTime @default(now())
+  documents Document[]
+}
+
+// 2. The Documentation (Files uploaded for RAG)
+model Document {
+  id        String   @id @default(uuid())
+  title     String
+  content   String   // The full text
+  // We will add the Vector Embedding field later (Phase 4)
+  // embedding Unsupported("vector(1536)")? 
+  
+  createdAt DateTime @default(now())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+}
+
+// 3. The "Solutions Engineer" Audit Log (Cost Tracking)
+model SystemLog {
+  id        String   @id @default(uuid())
+  action    String   // e.g., "AI_QUERY"
+  cost      Float    // e.g., 0.0004
+  timestamp DateTime @default(now())
+}
