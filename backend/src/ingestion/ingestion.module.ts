@@ -9,6 +9,15 @@ import { IngestionProcessor } from './ingestion.processor';
     // Register the specific queue for this module
     BullModule.registerQueue({
       name: 'ingestion', // <--- MUST match @InjectQueue('ingestion') in Controller
+      defaultJobOptions: {
+        attempts: 3,           // <--- RETRY POLICY: Try 3 times total
+        backoff: {
+          type: 'exponential', // <--- STRATEGY: Wait 1s, then 2s, then 4s...
+          delay: 1000,
+        },
+        removeOnComplete: true, // Auto-delete successful jobs to save Redis space
+        removeOnFail: false,    // Keep failed jobs so we can inspect them
+      },
     }),
   ],
   controllers: [IngestionController],

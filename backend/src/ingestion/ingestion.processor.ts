@@ -1,31 +1,39 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Job } from 'bullmq';
 import { Logger } from '@nestjs/common';
+import { IngestionService } from './ingestion.service';
+
+// 1. Define the "Package Label" (The interface)
+interface IngestionJobData {
+    fileName: string;
+    fileBuffer: string; // This is the Base64 string
+}
 
 @Processor('ingestion') // <--- This MUST match the queue name in your Module
 export class IngestionProcessor extends WorkerHost {
     private readonly logger = new Logger(IngestionProcessor.name);
 
-    async process(job: Job<any, any, string>): Promise<any> {
-        this.logger.log(`--- [WORKER START] ---`);
-        this.logger.log(`Processing Job ID: ${job.id}`);
-        this.logger.log(`File being processed: ${job.data.fileName}`);
+    constructor(private readonly ingestionService: IngestionService) {
+        super();
+    }
+    // 2. Add the interface to the Job type definition
+    async process(job: Job<IngestionJobData>): Promise<any> {
+        this.logger.log(`--- [WORKER START] Job ${job.id} ---`);
 
-        // This is where the magic will eventually happen:
-        // 1. Convert Buffer back to File
-        // 2. Send to GitHub/Gemini
-        // 3. Save to Vector DB
+        // Now TypeScript knows exactly what 'data' contains!
+        const { fileBuffer, fileName } = job.data;
 
-        this.logger.log('Simulating PDF text extraction (3 second delay)...');
+        const buffer = Buffer.from(fileBuffer, 'base64');
 
-        // Simulate "Work" so you can see it happening in the logs
-        await new Promise(resolve => setTimeout(resolve, 3000));
+        const extractedText = await this.ingestionService.extractTextFromPdf(buffer);
 
-        this.logger.log(`--- [WORKER COMPLETED] Job ${job.id} ---`);
+        this.logger.log(`Extracted Text from ${fileName}: ${extractedText.substring(0, 50)}...`);
+
+        this.logger.log(`--- [WORKER COMPLETED] ---`);
 
         return {
             status: 'success',
-            processedAt: new Date().toISOString()
+            textLength: extractedText.length
         };
     }
 }
