@@ -10,11 +10,12 @@ We are building this platform in distinct phases to simulate an Enterprise softw
 
 - [x] **Phase 1: The Foundation** (Monorepo Setup, Next.js + NestJS, CORS).
 - [x] **Phase 2: The Data Layer** (Dockerized Postgres, Prisma v7, Strict Validation).
-- [ ] **Phase 3: Ingestion Engine** (Async file processing, BullMQ, PDF Parsing).
-- [ ] **Phase 4: Intelligence** (Vector Embeddings, RAG Pipeline).
-- [ ] **Phase 5: Agentic Workflow** (LangGraph, Reasoning).
+- [x] **Phase 3: Ingestion Engine** (Async file processing, BullMQ, PDF Parsing).
+- [ ] **Phase 4: Memory Layer** (Persisting parsed results to Postgres).
+- [ ] **Phase 5: Intelligence** (Vector Embeddings, RAG Pipeline).
+- [ ] **Phase 6: Agentic Workflow** (LangGraph, Reasoning).
 
-> **Current Status:** ✅ Phase 2 Complete.
+> **Current Status:** ✅ Phase 3 Complete (Ingestion Engine Online).
 
 ---
 
@@ -26,8 +27,8 @@ This project simulates a "Customer Zero" Enterprise environment, moving beyond s
 | :----------- | :---------------------- | :----- | :----------------------------------------------- |
 | **Frontend** | Next.js 14 (App Router) | `3001` | Client-side UI, connects to Backend via HTTP.    |
 | **Backend**  | NestJS (v10)            | `3000` | API Gateway, Validation, and Business Logic.     |
+| **Queue**    | Redis + BullMQ          | `6379` | Async Job Queue for decoupling ingestion tasks.  |
 | **Database** | PostgreSQL + pgvector   | `5432` | Dockerized DB. Stores Users & Vector Embeddings. |
-| **ORM**      | Prisma v7               | N/A    | Enterprise config using `pg` driver adapter.     |
 
 ---
 
@@ -39,6 +40,8 @@ This project adopts specific architectural patterns to demonstrate **Solutions E
 - **Strict Validation:** Global DTO validation pipes to sanitize inputs.
 - **Configuration:** 12-Factor App principles using `@nestjs/config`.
 - **Prisma v7 Adapter:** Manually configured connection pool to handle the latest Prisma breaking changes (Enterprise Pattern).
+- **Event-Driven Architecture:** Decouples high-volume file uploads from CPU-intensive parsing using **Redis & BullMQ**.
+- **Defensive Parsing:** Implements **"Magic Byte" inspection** to validate file integrity (preventing "fake PDF" crashes) before processing.
 
 ---
 
@@ -74,6 +77,10 @@ Create a `.env` file in the `backend/` root directory:
 PORT=3000
 # Connection string for local Docker container
 DATABASE_URL="postgresql://postgres:password@localhost:5432/smartdocs"
+
+# Redis Connection (Required for Queues)
+REDIS_HOST="localhost"
+REDIS_PORT=6379
 ```
 
 ### 4. Infrastructure & Database
@@ -129,6 +136,27 @@ curl -X POST http://localhost:3000/users \
   "name": "Phase 2 Reviewer",
   "createdAt": "2026-02-10T..."
 }
+```
+
+## 🧪 Verification (Phase 3)
+
+To verify the **Ingestion Pipeline** (Upload -> Queue -> Worker), upload a PDF:
+
+```bash
+curl -X POST http://localhost:3000/ingestion/upload \
+  -F "file=@./path/to/your/test.pdf" \
+  -H "Content-Type: multipart/form-data"
+```
+
+**Expected Output:**
+
+```bash
+[IngestionController] File accepted for processing. Job ID: 29
+...
+[IngestionProcessor] Processing job 29...
+[IngestionService] File Header: '%PDF-' (Hex: 255044462d)
+[IngestionService] Successfully parsed PDF. Length: 12823
+[IngestionProcessor] Extracted Text: "SmartDocs Architecture..."
 ```
 
 ---
