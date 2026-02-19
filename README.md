@@ -23,6 +23,8 @@ We are building this platform in distinct phases to simulate an Enterprise softw
 
 This project simulates a "Customer Zero" Enterprise environment, moving beyond simple tutorials to handle real-world constraints.
 
+![SmartDocs Architecture Diagram](./docs/Architecture-C4-Container-Level.png)
+
 | Service      | Tech Stack              | Port   | Description                                                  |
 | :----------- | :---------------------- | :----- | :----------------------------------------------------------- |
 | **Frontend** | Next.js 14 (App Router) | `3001` | Client-side UI, connects to Backend via HTTP.                |
