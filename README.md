@@ -11,11 +11,11 @@ We are building this platform in distinct phases to simulate an Enterprise softw
 - [x] **Phase 1: The Foundation** (Monorepo Setup, Next.js + NestJS, CORS).
 - [x] **Phase 2: The Data Layer** (Dockerized Postgres, Prisma v7, Strict Validation).
 - [x] **Phase 3: Ingestion Engine** (Async file processing, BullMQ, PDF Parsing).
-- [ ] **Phase 4: Memory Layer** (Persisting parsed results to Postgres).
+- [x] **Phase 4: Memory Layer** (Persisting parsed results and state machine to Postgres).
 - [ ] **Phase 5: Intelligence** (Vector Embeddings, RAG Pipeline).
 - [ ] **Phase 6: Agentic Workflow** (LangGraph, Reasoning).
 
-> **Current Status:** ✅ Phase 3 Complete (Ingestion Engine Online).
+> **Current Status:** ✅ Phase 4 Complete (Memory Layer & State Machine Online).
 
 ---
 
@@ -23,12 +23,12 @@ We are building this platform in distinct phases to simulate an Enterprise softw
 
 This project simulates a "Customer Zero" Enterprise environment, moving beyond simple tutorials to handle real-world constraints.
 
-| Service      | Tech Stack              | Port   | Description                                      |
-| :----------- | :---------------------- | :----- | :----------------------------------------------- |
-| **Frontend** | Next.js 14 (App Router) | `3001` | Client-side UI, connects to Backend via HTTP.    |
-| **Backend**  | NestJS (v10)            | `3000` | API Gateway, Validation, and Business Logic.     |
-| **Queue**    | Redis + BullMQ          | `6379` | Async Job Queue for decoupling ingestion tasks.  |
-| **Database** | PostgreSQL + pgvector   | `5432` | Dockerized DB. Stores Users & Vector Embeddings. |
+| Service      | Tech Stack              | Port   | Description                                                  |
+| :----------- | :---------------------- | :----- | :----------------------------------------------------------- |
+| **Frontend** | Next.js 14 (App Router) | `3001` | Client-side UI, connects to Backend via HTTP.                |
+| **Backend**  | NestJS (v10)            | `3000` | API Gateway, Validation, and Business Logic.                 |
+| **Queue**    | Redis + BullMQ          | `6379` | Async Job Queue for decoupling ingestion tasks.              |
+| **Database** | PostgreSQL + pgvector   | `5432` | Dockerized DB. Stores Users, Documents, & Vector Embeddings. |
 
 ---
 
@@ -42,6 +42,7 @@ This project adopts specific architectural patterns to demonstrate **Solutions E
 - **Prisma v7 Adapter:** Manually configured connection pool to handle the latest Prisma breaking changes (Enterprise Pattern).
 - **Event-Driven Architecture:** Decouples high-volume file uploads from CPU-intensive parsing using **Redis & BullMQ**.
 - **Defensive Parsing:** Implements **"Magic Byte" inspection** to validate file integrity (preventing "fake PDF" crashes) before processing.
+- **Sovereign State Machine:** Manages the document lifecycle (`PENDING` -> `PROCESSING` -> `COMPLETED`) entirely within a local Postgres database to guarantee data privacy and job recovery.
 
 ---
 
@@ -138,9 +139,9 @@ curl -X POST http://localhost:3000/users \
 }
 ```
 
-## 🧪 Verification (Phase 3)
+## 🧪 Verification (Phase 4: Memory Layer)
 
-To verify the **Ingestion Pipeline** (Upload -> Queue -> Worker), upload a PDF:
+To verify the **Event-Driven Ingestion Pipeline** (Upload -> Postgres PENDING -> Redis Worker -> Postgres COMPLETED), upload a PDF:
 
 ```bash
 curl -X POST http://localhost:3000/ingestion/upload \
@@ -150,13 +151,33 @@ curl -X POST http://localhost:3000/ingestion/upload \
 
 **Expected Output:**
 
+```JSON
+{
+  "status":"queued",
+  "jobId":"30",
+  "documentId":"263b4134-6511-44d8-8653-fcca93f100c8",
+  "message":"File accepted for processing. Check status later."
+}
+```
+
+**Worker Logs (Background):**
+
 ```bash
-[IngestionController] File accepted for processing. Job ID: 29
+[Nest] 42174  - 02/19/2026, 8:20:39 PM     LOG [IngestionProcessor] --- [WORKER START] Job 30 ---
+[Nest] 42174  - 02/19/2026, 8:20:39 PM     LOG [IngestionService] Received buffer size: 583199 bytes
+[Nest] 42174  - 02/19/2026, 8:20:40 PM     LOG [IngestionService] Successfully parsed PDF. Length: 12823
+[Nest] 42174  - 02/19/2026, 8:20:40 PM     LOG [IngestionProcessor] Extracted Text from Doc 263b4134-6511-44d8-8653-fcca93f100c8: pdf-parse
+2.4.5 • Public • Published 4 months ago
 ...
-[IngestionProcessor] Processing job 29...
-[IngestionService] File Header: '%PDF-' (Hex: 255044462d)
-[IngestionService] Successfully parsed PDF. Length: 12823
-[IngestionProcessor] Extracted Text: "SmartDocs Architecture..."
+[Nest] 42174  - 02/19/2026, 8:20:40 PM     LOG [IngestionProcessor] --- [WORKER COMPLETED] Document safely stored! ---
+```
+
+**Verify Persistence:**
+
+Run Prisma Studio to view the securely stored document and its COMPLETED status:
+
+```bash
+npx prisma studio
 ```
 
 ---
