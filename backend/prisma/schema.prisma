@@ -8,29 +8,46 @@ datasource db {
   provider = "postgresql"
 }
 
-// 1. The User (Developers using the platform)
+// 1. Define the Status Enum (New for Phase 4)
+enum IngestionStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+// 2. The User (Developers using the platform)
 model User {
-  id        String   @id @default(uuid())
-  email     String   @unique
+  id        String     @id @default(uuid())
+  email     String     @unique
   name      String?
-  createdAt DateTime @default(now())
+  createdAt DateTime   @default(now())
   documents Document[]
 }
 
-// 2. The Documentation (Files uploaded for RAG)
+// 3. The Documentation (Files uploaded for RAG)
 model Document {
-  id        String   @id @default(uuid())
-  title     String
-  content   String   // The full text
-  // We will add the Vector Embedding field later (Phase 4)
+  id           String          @id @default(uuid())
+  title        String
+  content      String?         @db.Text // @db.Text allows large PDF text. '?' allows it to be empty initially
+  status       IngestionStatus @default(PENDING)
+  
+  // Metadata for debugging
+  fileSize     Int?
+  errorMessage String?
+  
+  // We will add the Vector Embedding field later (Phase 5)
   // embedding Unsupported("vector(1536)")? 
   
-  createdAt DateTime @default(now())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id])
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  
+  // We make User optional for now so our raw API tests don't crash
+  userId       String?
+  user         User?           @relation(fields: [userId], references: [id])
 }
 
-// 3. The "Solutions Engineer" Audit Log (Cost Tracking)
+// 4. The "Solutions Engineer" Audit Log (Cost Tracking)
 model SystemLog {
   id        String   @id @default(uuid())
   action    String   // e.g., "AI_QUERY"

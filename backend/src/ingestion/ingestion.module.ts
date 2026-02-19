@@ -3,9 +3,11 @@ import { BullModule } from '@nestjs/bullmq';
 import { IngestionController } from './ingestion.controller';
 import { IngestionService } from './ingestion.service';
 import { IngestionProcessor } from './ingestion.processor';
+import { PrismaModule } from 'src/prisma/prisma.module';
 
 @Module({
   imports: [
+    PrismaModule,
     // Register the specific queue for this module
     BullModule.registerQueue({
       name: 'ingestion', // <--- MUST match @InjectQueue('ingestion') in Controller

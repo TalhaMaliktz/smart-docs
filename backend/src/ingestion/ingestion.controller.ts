@@ -13,6 +13,7 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
+import { PrismaService } from 'src/prisma/prisma.service';
 
 // Define the shape of the file manually to satisfy the compiler
 interface PdfFile {
@@ -21,6 +22,7 @@ interface PdfFile {
     mimetype: string;
     size: number;
 }
+
 // Define what the worker's success result looks like
 interface IngestionJobResult {
     status: string;
@@ -30,7 +32,10 @@ interface IngestionJobResult {
 @Controller('ingestion')
 export class IngestionController {
 
-    constructor(@InjectQueue('ingestion') private ingestionQueue: Queue) { }
+    constructor(
+        @InjectQueue('ingestion') private readonly ingestionQueue: Queue,
+        private readonly prisma: PrismaService
+    ) { }
 
     @Post('upload')
     @UseInterceptors(FileInterceptor('file'))
@@ -44,19 +49,29 @@ export class IngestionController {
             }),
         ) file: PdfFile,
     ) {
-        // This is the "Public" logic: Accept ANY file, add to queue.
-        // The "Private" logic would happen inside the Worker later.
-        const job = await this.ingestionQueue.add('process-pdf', {
-            fileName: file.originalname,
-            fileBuffer: file.buffer.toString('base64')
+        // 1. Create a "PENDING" record in Postgres FIRST
+        const document = await this.prisma.document.create({
+            data: {
+                title: file.originalname,
+                fileSize: file.size,
+            },
         });
 
+        // 2. Add Job to Queue (Attach the Database ID!)
+        const job = await this.ingestionQueue.add('process-pdf', {
+            file: file.buffer,
+            documentId: document.id, // <--- Tell the worker WHICH document to update
+        });
+
+        // 3. Return both the Redis Job ID and Postgres Document ID
         return {
             status: 'queued',
-            jobId: job.id,
+            jobId: job.id,           // The ID in Redis
+            documentId: document.id, // The ID in Postgres
             message: 'File accepted for processing. Check status later.'
         };
     }
+
     @Get('status/:id')
     async getJobStatus(@Param('id') id: string) {
         // 1. Look up the job in Redis by its ID
@@ -80,5 +95,4 @@ export class IngestionController {
             result: result,
         };
     }
-
 }
