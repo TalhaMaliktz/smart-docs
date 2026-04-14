@@ -2,7 +2,7 @@ import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Job } from 'bullmq';
 import { Logger } from '@nestjs/common';
 import { IngestionService } from './ingestion.service';
-import { PrismaService } from 'src/prisma/prisma.service'; // <-- Import Prisma
+import { PrismaService } from 'src/prisma/prisma.service';
 
 // 1. Update the interface to match what the Controller is now sending
 interface IngestionJobData {
