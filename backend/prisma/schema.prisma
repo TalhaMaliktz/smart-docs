@@ -1,14 +1,16 @@
 // backend/prisma/schema.prisma
 
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"] // NEW: Required for pgvector
 }
 
 datasource db {
-  provider = "postgresql"
+  provider   = "postgresql"
+  // Intentionally leaving URL out based on your custom NestJS implementation
+  extensions = [vector] // NEW: Enables pgvector in Postgres
 }
 
-// 1. Define the Status Enum (New for Phase 4)
 enum IngestionStatus {
   PENDING
   PROCESSING
@@ -16,7 +18,6 @@ enum IngestionStatus {
   FAILED
 }
 
-// 2. The User (Developers using the platform)
 model User {
   id        String     @id @default(uuid())
   email     String     @unique
@@ -25,32 +26,38 @@ model User {
   documents Document[]
 }
 
-// 3. The Documentation (Files uploaded for RAG)
 model Document {
   id           String          @id @default(uuid())
   title        String
-  content      String?         @db.Text // @db.Text allows large PDF text. '?' allows it to be empty initially
+  content      String?         @db.Text
   status       IngestionStatus @default(PENDING)
-  
-  // Metadata for debugging
   fileSize     Int?
   errorMessage String?
-  
-  // We will add the Vector Embedding field later (Phase 5)
-  // embedding Unsupported("vector(1536)")? 
-  
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @updatedAt
-  
-  // We make User optional for now so our raw API tests don't crash
   userId       String?
   user         User?           @relation(fields: [userId], references: [id])
+  
+  // NEW: A document has many chunks
+  chunks       DocumentChunk[]
 }
 
-// 4. The "Solutions Engineer" Audit Log (Cost Tracking)
+// NEW: The Vector Memory Layer
+model DocumentChunk {
+  id         String   @id @default(uuid())
+  text       String   @db.Text
+  
+  // CHANGED: Gemini outputs 768 dimensions, not 1536
+  embedding  Unsupported("vector(768)")
+  
+  documentId String
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+}
+
 model SystemLog {
   id        String   @id @default(uuid())
-  action    String   // e.g., "AI_QUERY"
-  cost      Float    // e.g., 0.0004
+  action    String   
+  cost      Float    
   timestamp DateTime @default(now())
 }
