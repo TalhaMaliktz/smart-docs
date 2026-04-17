@@ -47,7 +47,6 @@ model DocumentChunk {
   id         String   @id @default(uuid())
   text       String   @db.Text
   
-  // CHANGED: Gemini outputs 768 dimensions, not 1536
   embedding  Unsupported("vector(3072)")
   
   documentId String

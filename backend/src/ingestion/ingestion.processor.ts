@@ -8,8 +8,8 @@ import { RecursiveCharacterTextSplitter } from '@langchain/textsplitters';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
 interface IngestionJobData {
-    file: { type: 'Buffer'; data: number[] }; // How BullMQ serializes a Node Buffer
-    documentId: string; // The Postgres ID we need to update
+    file: { type: 'Buffer'; data: number[] }; // BullMQ serialization of Node Buffer
+    documentId: string;
 }
 
 @Processor('ingestion')
@@ -18,7 +18,7 @@ export class IngestionProcessor extends WorkerHost {
 
     constructor(
         private readonly ingestionService: IngestionService,
-        private readonly prisma: PrismaService // <-- Inject Prisma
+        private readonly prisma: PrismaService
     ) {
         super();
     }
@@ -29,25 +29,23 @@ export class IngestionProcessor extends WorkerHost {
         const { file, documentId } = job.data;
 
         try {
-            // 1. Mark as PROCESSING in the Database
             await this.prisma.document.update({
                 where: { id: documentId },
                 data: { status: 'PROCESSING' },
             });
 
-            // 2. Reconstruct the Buffer from Redis JSON format
+            // Reconstruct the file buffer from Redis payload
             const buffer = Buffer.from(file.data);
 
-            // 3. Extract the text using your Service
             const extractedText = await this.ingestionService.extractTextFromPdf(buffer);
             this.logger.log(`Extracted Text from Doc ${documentId}: ${extractedText.substring(0, 50)}...`);
 
             // ==========================================
-            // PHASE 5: THE AI BRAIN (STABLE STEP-BY-STEP)
+            // PHASE 5: CHUNKING & VECTORIZATION (RAG INGESTION)
             // ==========================================
             this.logger.log(`Starting Phase 5: Chunking and Native Vectorization...`);
 
-            // 1. TEXT SPLITTING (Keep LangChain for this part)
+            // 1. Text Splitting via LangChain
             const splitter = new RecursiveCharacterTextSplitter({
                 chunkSize: 1000,
                 chunkOverlap: 200,
@@ -57,27 +55,27 @@ export class IngestionProcessor extends WorkerHost {
             const docs = rawDocs.filter(doc => doc.pageContent.trim().length > 0);
             this.logger.log(`Split document into ${docs.length} valid chunks.`);
 
-            // 2. THE COMPILER FIX: Narrow the type from string | undefined to string
+            // 2. Validate Environment Configurations
             const apiKey = process.env.GOOGLE_API_KEY;
             if (!apiKey) {
-                throw new Error("GOOGLE_API_KEY is not defined in your .env file. The worker cannot proceed.");
+                throw new Error("GOOGLE_API_KEY is not defined in the environment. Worker cannot proceed.");
             }
 
-            // 3. INITIALIZE SDK: Using the model you found in the docs
+            // 3. Initialize Native Google Generative AI SDK
             const genAI = new GoogleGenerativeAI(apiKey);
             const embeddingModel = genAI.getGenerativeModel({ model: "gemini-embedding-001" });
 
-            this.logger.log(`Throttling requests to Gemini (1 chunk every 4 seconds)...`);
+            this.logger.log(`Throttling requests to Gemini (1 chunk every 4.2 seconds)...`);
 
             let savedCount = 0;
             for (let i = 0; i < docs.length; i++) {
                 try {
-                    // 4. EMBED CONTENT (Native Method)
+                    // Embed chunk into 3072-dimensional vector
                     const result = await embeddingModel.embedContent(docs[i].pageContent);
                     const vector = result.embedding.values;
 
+                    // Data Guard: Prevent pgvector crashes if Google returns empty values
                     if (vector && vector.length > 0) {
-                        // 5. SAVE TO DB (Assuming current 768 dimension schema)
                         await this.prisma.$executeRaw`
                             INSERT INTO "DocumentChunk" (id, text, "documentId", embedding)
                             VALUES (
@@ -88,13 +86,13 @@ export class IngestionProcessor extends WorkerHost {
                             )
                         `;
                         savedCount++;
-                        this.logger.log(`[${i + 1}/${docs.length}] Successfully saved vector.`);
+                        this.logger.log(`[${i + 1}/${docs.length}] Successfully saved 3072-dim vector.`);
                     }
 
                 } catch (err) {
-                    this.logger.error(`[ERROR] Gemini rejected chunk ${i}:`, err);
+                    this.logger.error(`[ERROR] Gemini API rejected chunk ${i}:`, err);
                 } finally {
-                    // Respect the rate limit
+                    // Hard Rate Limiter: Enforce < 15 Requests Per Minute (Google Free Tier constraint)
                     if (i < docs.length - 1) {
                         await new Promise(resolve => setTimeout(resolve, 4200));
                     }
@@ -103,6 +101,9 @@ export class IngestionProcessor extends WorkerHost {
 
             this.logger.log(`Successfully saved ${savedCount} valid vectors to pgvector.`);
 
+            // ==========================================
+            // PHASE 5 COMPLETE: FINALIZE DOCUMENT
+            // ==========================================
             await this.prisma.document.update({
                 where: { id: documentId },
                 data: {
@@ -119,14 +120,11 @@ export class IngestionProcessor extends WorkerHost {
             };
 
         } catch (error) {
-            // 1. Defensively extract the stack trace and message
             const stackTrace = error instanceof Error ? error.stack : 'No stack trace available';
             const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
 
-            // 2. Safely log the error
             this.logger.error(`[WORKER FAILED] Job ${job.id} failed`, stackTrace);
 
-            // 3. Mark as FAILED in the Database
             await this.prisma.document.update({
                 where: { id: documentId },
                 data: {
@@ -135,8 +133,7 @@ export class IngestionProcessor extends WorkerHost {
                 },
             });
 
-            // 4. Let BullMQ know it failed
-            throw error;
+            throw error; // Re-throw to inform BullMQ of job failure
         }
     }
 }
