@@ -12,10 +12,12 @@ We are building this platform in distinct phases to simulate an Enterprise softw
 - [x] **Phase 2: The Data Layer** (Dockerized Postgres, Prisma v7, Strict Validation).
 - [x] **Phase 3: Ingestion Engine** (Async file processing, BullMQ, PDF Parsing).
 - [x] **Phase 4: Memory Layer** (Persisting parsed results and state machine to Postgres).
-- [ ] **Phase 5: Intelligence** (Vector Embeddings, RAG Pipeline).
-- [ ] **Phase 6: Agentic Workflow** (LangGraph, Reasoning).
+- [x] **Phase 5: Vectorization Pipeline** (Native SDK Integration, pgvector 3072-dims, Rate Limiting).
+- [ ] **Phase 6: Retrieval Engine** (Cosine Similarity Search, RAG Synthesis).
+- [ ] **Phase 7: Agentic Workflow** (LangGraph, Reasoning & Triage).
+- [ ] **Phase 8: Frontend UI** (Next.js 14, Shadcn, Streaming Responses).
 
-> **Current Status:** ✅ Phase 4 Complete (Memory Layer & State Machine Online).
+> **Current Status:** ✅ Phase 5 Complete (Vector Database populated with 3072-dim embeddings).
 
 ---
 
@@ -36,8 +38,11 @@ This project simulates a "Customer Zero" Enterprise environment, moving beyond s
 
 ## ⚙️ Design Decisions & Constraints
 
-This project adopts specific architectural patterns to demonstrate **Solutions Engineering**
+To handle the rigorous demands of enterprise data sovereignty and high-volume AI ingestion, this system enforces the following architectural constraints:
 
+- **Native SDKs over Wrappers:** Bypassed popular abstraction layers in favor of the Native `@google/generative-ai` SDK to eliminate silent API failures and maintain absolute control over the network layer.
+- **API Traffic Shaping (Tarpit Bypass):** Engineered an event-loop aware rate limiter via `finally` blocks in the Worker. This gracefully handles Enterprise API "Tarpitting" (intentional network delays by the provider) without crashing the queue or triggering `429 Too Many Requests`.
+- **High-Fidelity Embedding:** Configured `pgvector` to accept `vector(3072)` dimensions, strictly aligning the database schema with Google's `gemini-embedding-001` enterprise output.
 - **Dockerized Persistence:** Uses `ankane/pgvector` image for local AI vector support instead of managed cloud services.
 - **Strict Validation:** Global DTO validation pipes to sanitize inputs.
 - **Configuration:** 12-Factor App principles using `@nestjs/config`.
@@ -120,7 +125,7 @@ npm run dev -- -p 3001
 
 ---
 
-## 🧪 Verification (Phase 2)
+## 🧪 Verification (Phase 2, 4, & 5)
 
 To verify the **API <-> Database** connection is working, run this curl command:
 
@@ -141,9 +146,7 @@ curl -X POST http://localhost:3000/users \
 }
 ```
 
-## 🧪 Verification (Phase 4: Memory Layer)
-
-To verify the **Event-Driven Ingestion Pipeline** (Upload -> Postgres PENDING -> Redis Worker -> Postgres COMPLETED), upload a PDF:
+To verify the **Event-Driven Ingestion Pipeline** (Upload -> Postgres PENDING -> Redis Worker -> Postgres COMPLETED + Vectorized), upload a PDF:
 
 ```bash
 curl -X POST http://localhost:3000/ingestion/upload \
@@ -151,32 +154,28 @@ curl -X POST http://localhost:3000/ingestion/upload \
   -H "Content-Type: multipart/form-data"
 ```
 
-**Expected Output:**
+**Expected Output (Instant API Response):**
 
 ```JSON
 {
-  "status":"queued",
-  "jobId":"30",
-  "documentId":"263b4134-6511-44d8-8653-fcca93f100c8",
-  "message":"File accepted for processing. Check status later."
+  "status": "queued",
+  "jobId": "30",
+  "documentId": "263b4134-6511-44d8-8653-fcca93f100c8",
+  "message": "File accepted for processing. Check status later."
 }
 ```
 
-**Worker Logs (Background):**
+**Worker Logs (Background Processing):**
 
 ```bash
 [Nest] 42174  - 02/19/2026, 8:20:39 PM     LOG [IngestionProcessor] --- [WORKER START] Job 30 ---
 [Nest] 42174  - 02/19/2026, 8:20:39 PM     LOG [IngestionService] Received buffer size: 583199 bytes
-[Nest] 42174  - 02/19/2026, 8:20:40 PM     LOG [IngestionService] Successfully parsed PDF. Length: 12823
-[Nest] 42174  - 02/19/2026, 8:20:40 PM     LOG [IngestionProcessor] Extracted Text from Doc 263b4134-6511-44d8-8653-fcca93f100c8: pdf-parse
-2.4.5 • Public • Published 4 months ago
-...
-[Nest] 42174  - 02/19/2026, 8:20:40 PM     LOG [IngestionProcessor] --- [WORKER COMPLETED] Document safely stored! ---
+[Nest] 42174  - 02/19/2026, 8:20:41 PM     LOG [IngestionService] Extracted text, chunking into 1000-token blocks...
+[Nest] 42174  - 02/19/2026, 8:20:45 PM     LOG [IngestionService] Generating 3072-dim vectors via Gemini...
 ```
 
-**Verify Persistence:**
-
-Run Prisma Studio to view the securely stored document and its COMPLETED status:
+**Verify Persistence & Vectorization:**
+Run Prisma Studio to view the securely stored document, its `COMPLETED` status, and the generated embeddings:
 
 ```bash
 npx prisma studio
@@ -184,4 +183,4 @@ npx prisma studio
 
 ---
 
-_A Reference Implementation for Modern AI Architectures (NestJS + RAG)._
+_A Reference Implementation for Modern AI Architectures (NestJS + Agentic RAG)._
