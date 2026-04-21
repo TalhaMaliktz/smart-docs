@@ -7,6 +7,7 @@ import { UsersModule } from './users/users.module';
 import { PrismaService } from './prisma/prisma.service';
 import { PrismaModule } from './prisma/prisma.module';
 import { IngestionModule } from './ingestion/ingestion.module';
+import { ChatModule } from './chat/chat.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { IngestionModule } from './ingestion/ingestion.module';
     PrismaModule,
     UsersModule,
     IngestionModule,
+    ChatModule,
   ],
   controllers: [AppController],
   providers: [AppService, PrismaService],

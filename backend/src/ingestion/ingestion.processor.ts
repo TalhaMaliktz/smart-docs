@@ -56,9 +56,9 @@ export class IngestionProcessor extends WorkerHost {
             this.logger.log(`Split document into ${docs.length} valid chunks.`);
 
             // 2. Validate Environment Configurations
-            const apiKey = process.env.GOOGLE_API_KEY;
+            const apiKey = process.env.GEMINI_API_KEY;
             if (!apiKey) {
-                throw new Error("GOOGLE_API_KEY is not defined in the environment. Worker cannot proceed.");
+                throw new Error("GEMINI_API_KEY is not defined in the environment. Worker cannot proceed.");
             }
 
             // 3. Initialize Native Google Generative AI SDK
