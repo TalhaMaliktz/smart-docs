@@ -33,6 +33,7 @@ This project simulates a "Customer Zero" Enterprise environment, moving beyond s
 | **Backend**  | NestJS (v10)            | `3000` | API Gateway, Validation, and Business Logic.                 |
 | **Queue**    | Redis + BullMQ          | `6379` | Async Job Queue for decoupling ingestion tasks.              |
 | **Database** | PostgreSQL + pgvector   | `5432` | Dockerized DB. Stores Users, Documents, & Vector Embeddings. |
+| **AI / LLM** | Google Generative AI    | `443`  | External API for vector embeddings & RAG logic (Gemini).     |
 
 ---
 
