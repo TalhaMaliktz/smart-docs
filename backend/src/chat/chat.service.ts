@@ -1,22 +1,22 @@
 import { Injectable, Logger, InternalServerErrorException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { PrismaService } from 'src/prisma/prisma.service';
 
 @Injectable()
 export class ChatService {
     private readonly logger = new Logger(ChatService.name);
     private ai: GoogleGenerativeAI;
 
-    // We inject ConfigService to securely access our environment variables
-    constructor(private configService: ConfigService) {
-        // Make sure this matches exactly what you named it in your .env file!
+    // Added PrismaService to the constructor
+    constructor(
+        private configService: ConfigService,
+        private prisma: PrismaService
+    ) {
         const apiKey = this.configService.get<string>('GEMINI_API_KEY');
-
         if (!apiKey) {
             throw new Error('GEMINI_API_KEY is missing from environment variables.');
         }
-
-        // Initialize the Native SDK
         this.ai = new GoogleGenerativeAI(apiKey);
     }
 
@@ -35,20 +35,72 @@ export class ChatService {
 
             this.logger.log(`Successfully generated vector array of length: ${queryVector.length}`);
 
-            // TODO: 2. Run Raw SQL Cosine Similarity search against pgvector
-            // TODO: 3. Orchestrate the System Prompt with retrieved context
-            // TODO: 4. Generate the final answer using Gemini 1.5 Flash
+            // 2. Run Raw SQL Cosine Similarity search against pgvector
+            this.logger.log('Querying pgvector database for top matching chunks...');
+
+            // We must stringify the array so Postgres can parse it into the ::vector type
+            const vectorString = JSON.stringify(queryVector);
+
+            // The <=> operator calculates Cosine Distance. 
+            // 1 - distance = Cosine Similarity.
+            // Enterprise RAG Pattern: Increase Top-K, but enforce a Similarity Threshold
+            const searchResults = await this.prisma.$queryRaw<Array<{ text: string, similarity: number }>>`
+                SELECT 
+                text, 
+                1 - (embedding <=> ${vectorString}::vector) as similarity
+                FROM "DocumentChunk"
+                WHERE 1 - (embedding <=> ${vectorString}::vector) > 0.6
+                ORDER BY embedding <=> ${vectorString}::vector
+                LIMIT 10;
+            `;
+
+            this.logger.log(`Found ${searchResults.length} relevant chunks from the database.`);
+
+            if (searchResults.length === 0) {
+                this.logger.warn('No relevant documents found. Short-circuiting LLM call to save API quota.');
+                return {
+                    query: userMessage,
+                    answer: "I do not have enough information in the provided documents to answer this question.",
+                    sourcesUsed: 0
+                };
+            }
+
+            // Combine the retrieved text chunks into a single block of context
+            const context = searchResults.map(res => res.text).join('\n\n---\n\n');
+
+            // 3. Orchestrate the System Prompt with retrieved context
+            this.logger.log('Orchestrating system prompt with retrieved context...');
+
+            const prompt = `
+                You are an expert technical assistant. Your job is to answer the user's question using ONLY the provided context. 
+                If the context does not contain the answer, politely state that you do not know based on the provided documents.
+                Do not hallucinate or make up information.
+
+                CONTEXT:
+                ${context}
+
+                USER QUESTION:
+                ${userMessage}
+            `;
+
+            // 4. Generate the final answer using Gemini 2.5 Flash
+            this.logger.log('Calling Gemini 2.5 Flash for final synthesis...');
+            const chatModel = this.ai.getGenerativeModel({ model: 'gemini-2.5-flash' });
+
+            const llmResponse = await chatModel.generateContent(prompt);
+            const finalAnswer = llmResponse.response.text();
+
+            this.logger.log('Successfully generated RAG response.');
 
             return {
                 query: userMessage,
-                vectorDimensions: queryVector.length,
-                status: 'vectorized',
-                message: 'The Read Path successfully embedded the query.'
+                answer: finalAnswer,
+                sourcesUsed: searchResults.length
             };
 
         } catch (error) {
-            this.logger.error('Failed to vectorize user query', error);
-            throw new InternalServerErrorException('Failed to process AI embedding layer.');
+            this.logger.error('Failed to process AI Retrieval layer', error);
+            throw new InternalServerErrorException('Failed to process AI Retrieval layer.');
         }
     }
 }
