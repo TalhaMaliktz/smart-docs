@@ -43,15 +43,18 @@ export class ChatService {
 
             // The <=> operator calculates Cosine Distance. 
             // 1 - distance = Cosine Similarity.
-            // Enterprise RAG Pattern: Increase Top-K, but enforce a Similarity Threshold
+            // Enterprise Pattern: Extract "Magic Numbers" into tunable configuration variables
+            const SIMILARITY_THRESHOLD = 0.6; // Minimum match percentage (60%) to prevent hallucinations
+            const TOP_K_LIMIT = 10;           // Maximum chunks to send to the LLM to save token quota
+
             const searchResults = await this.prisma.$queryRaw<Array<{ text: string, similarity: number }>>`
                 SELECT 
                 text, 
                 1 - (embedding <=> ${vectorString}::vector) as similarity
                 FROM "DocumentChunk"
-                WHERE 1 - (embedding <=> ${vectorString}::vector) > 0.6
+                WHERE 1 - (embedding <=> ${vectorString}::vector) > ${SIMILARITY_THRESHOLD}
                 ORDER BY embedding <=> ${vectorString}::vector
-                LIMIT 10;
+                LIMIT ${TOP_K_LIMIT};
             `;
 
             this.logger.log(`Found ${searchResults.length} relevant chunks from the database.`);
