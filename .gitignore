@@ -1,0 +1,17 @@
+.DS_Store
+.vscode/
+.idea/
+*.log
+
+node_modules/
+dist/
+.next/
+coverage/
+*.local
+
+agent-c/venv/
+agent-c/.env
+__pycache__/
+*.py[cod]
+*$py.class
+*.sqlite3
