@@ -60,3 +60,12 @@ model SystemLog {
   cost      Float    
   timestamp DateTime @default(now())
 }
+
+model adr_vectors {
+  id                  String   @id @default(uuid())
+  rule_text           String   @db.Text
+  good_code_example   String?  @db.Text
+  // 1024 dimensions strictly for our local Qwen embedding model
+  embedding           Unsupported("vector(1024)") 
+  createdAt           DateTime @default(now())
+}
