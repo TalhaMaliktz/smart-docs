@@ -2,13 +2,12 @@
 
 generator client {
   provider        = "prisma-client-js"
-  previewFeatures = ["postgresqlExtensions"] // NEW: Required for pgvector
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
   provider   = "postgresql"
-  // Intentionally leaving URL out based on your custom NestJS implementation
-  extensions = [vector] // NEW: Enables pgvector in Postgres
+  extensions = [vector]
 }
 
 enum IngestionStatus {
@@ -37,12 +36,10 @@ model Document {
   updatedAt    DateTime        @updatedAt
   userId       String?
   user         User?           @relation(fields: [userId], references: [id])
-  
-  // NEW: A document has many chunks
   chunks       DocumentChunk[]
 }
 
-// NEW: The Vector Memory Layer
+
 model DocumentChunk {
   id         String   @id @default(uuid())
   text       String   @db.Text
@@ -61,11 +58,18 @@ model SystemLog {
   timestamp DateTime @default(now())
 }
 
+enum ADRCategory {
+  SECURITY
+  ARCHITECTURE
+  PERFORMANCE
+  COMPLIANCE
+}
+
 model adr_vectors {
   id                  String   @id @default(uuid())
   rule_text           String   @db.Text
   good_code_example   String?  @db.Text
-  // 1024 dimensions strictly for our local Qwen embedding model
+  rule_category       ADRCategory @default(SECURITY)
   embedding           Unsupported("vector(1024)") 
   createdAt           DateTime @default(now())
 }
